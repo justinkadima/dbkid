@@ -1,0 +1,1 @@
+DBKid embeds its web interface in the executable.

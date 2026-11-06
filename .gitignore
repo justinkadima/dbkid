@@ -1,0 +1,25 @@
+# Local build products and test caches
+/dbkid
+/dbkid.exe
+/dist/
+/coverage.out
+__pycache__/
+node_modules/
+.DS_Store
+
+# Internal planning contains machine-specific development notes
+/docs/plans/
+
+# Local configuration, credentials, and data
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.log

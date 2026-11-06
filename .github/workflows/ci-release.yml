@@ -1,0 +1,116 @@
+name: CI and release
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go tests and vet
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Verify dependencies
+        run: |
+          go mod download
+          go mod verify
+      - run: go test ./...
+      - run: go vet ./...
+
+  frontend:
+    name: Frontend browser tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Check JavaScript and run browser tests
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+          DBKID_TEST_TMPDIR: ${{ runner.temp }}
+        run: |
+          "$CHROME_BIN" --version
+          node --check web/app.js
+          node --test web/app.test.js
+
+  package:
+    name: Build release archives
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [go, frontend]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Verify dependencies
+        run: |
+          go mod download
+          go mod verify
+      - name: Cross-compile and package
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/amd64; do
+            os=${target%/*}
+            arch=${target#*/}
+            stage="$RUNNER_TEMP/dbkid-package/$os-$arch"
+            mkdir -p "$stage"
+            binary=dbkid
+            if [ "$os" = windows ]; then binary=dbkid.exe; fi
+            GOOS="$os" GOARCH="$arch" go build -trimpath -o "$stage/$binary" .
+            archive="dbkid-$os-$arch"
+            if [ "$os" = windows ]; then
+              (cd "$stage" && zip -q "$GITHUB_WORKSPACE/dist/$archive.zip" "$binary")
+            else
+              tar -C "$stage" -czf "dist/$archive.tar.gz" "$binary"
+            fi
+          done
+          (cd dist && sha256sum dbkid-* > SHA256SUMS && sha256sum -c SHA256SUMS)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dbkid-release
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [package]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dbkid-release
+          path: dist
+      - name: Verify and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum -c SHA256SUMS)
+          gh release create "$RELEASE_TAG" dist/dbkid-* dist/SHA256SUMS \
+            --verify-tag --title "$RELEASE_TAG" --notes "DBKid release $RELEASE_TAG"

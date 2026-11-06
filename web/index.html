@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>DBKid</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div id="query-outcome-warnings"></div>
+  <main id="boot-view" class="boot-view" aria-live="polite">
+    <div class="brand brand-dark"><span class="brand-mark" aria-hidden="true">db</span><span>DBKid</span></div>
+    <p id="boot-message">Starting DBKid…</p>
+    <button id="retry-bootstrap" type="button" class="button button-secondary" hidden>Try again</button>
+  </main>
+
+  <main id="connect-view" class="connect-view" hidden>
+    <header class="connect-header">
+      <div class="brand brand-dark"><span class="brand-mark" aria-hidden="true">db</span><span>DBKid</span></div>
+      <span class="header-caption">DATABASE CONSOLE</span>
+    </header>
+    <div class="connect-content">
+      <section class="connection-panel" aria-labelledby="connect-heading">
+        <div class="section-eyebrow">SERVER CONNECTION</div>
+        <h1 id="connect-heading">Connect to a database</h1>
+        <p class="intro">Enter your server details to browse tables and run SQL.</p>
+        <form id="connect-form" method="post" action="/api/connect" autocomplete="off">
+          <div class="field-row">
+            <div class="field field-host">
+              <label for="host">Host</label>
+              <input id="host" name="host" value="127.0.0.1" required spellcheck="false" autocomplete="off">
+            </div>
+            <div class="field field-port">
+              <label for="port">Port</label>
+              <input id="port" name="port" type="number" min="1" max="65535" value="3306" required inputmode="numeric">
+            </div>
+          </div>
+          <div class="field">
+            <label for="user">Username</label>
+            <input id="user" name="user" required autocomplete="off" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="password">Password <span class="label-hint">(if required)</span></label>
+            <input id="password" name="password" type="password" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="tls">Connection security</label>
+            <select id="tls" name="tls" aria-describedby="tls-help">
+              <option value="disable">TLS disabled · plaintext</option>
+              <option value="verify">TLS enabled · verify certificate</option>
+            </select>
+            <p id="tls-help" class="field-help">TLS verification encrypts the connection and checks the server certificate. Plaintext is intended for local connections.</p>
+          </div>
+          <p id="connect-error" class="notice notice-error" role="alert" hidden></p>
+          <div class="form-actions"><button id="connect-button" class="button button-primary" type="submit">Connect</button></div>
+        </form>
+      </section>
+      <section id="recent-connections" class="recent-connections" aria-labelledby="recent-heading" hidden>
+        <h2 id="recent-heading">Recent connections</h2>
+        <p class="field-help">Passwords are never stored — after choosing a connection, type its password.</p>
+        <div id="recent-list" class="recent-list"></div>
+      </section>
+      <p class="connect-footnote">Credentials are sent only to this DBKid session and are not stored by this page.</p>
+    </div>
+  </main>
+
+  <div id="app-view" class="app-view" hidden>
+    <aside class="sidebar" aria-label="Server navigation">
+      <div class="sidebar-brand"><div class="brand"><span class="brand-mark" aria-hidden="true">db</span><span>DBKid</span></div><span class="brand-edition">CONSOLE</span></div>
+      <div class="server-summary">
+        <div class="connection-state"><span class="status-dot" aria-hidden="true"></span> Connected</div>
+        <div id="server-address" class="server-address"></div>
+        <div id="server-version" class="server-version"></div>
+      </div>
+      <details class="database-navigation" open>
+        <summary>Databases <span class="summary-hint">Show / hide</span></summary>
+        <div class="navigation-tools"><span>DATABASES</span><button id="refresh-databases" type="button" class="text-button">Refresh</button></div>
+        <nav id="database-list" class="database-list" aria-label="Databases and tables" aria-live="polite"></nav>
+      </details>
+      <div id="sidebar-tools" class="sidebar-tools" aria-label="Database tools"></div>
+    </aside>
+    <main class="workspace">
+      <header class="workspace-header">
+        <div class="workspace-heading">
+          <div class="section-eyebrow">DATABASE WORKSPACE</div>
+          <h1 id="workspace-title">Select a database</h1>
+          <p id="workspace-subtitle">Choose a database from the sidebar to get started.</p>
+        </div>
+        <button id="disconnect-button" class="button button-secondary" type="button">Disconnect</button>
+      </header>
+      <p id="disconnect-error" class="notice notice-error workspace-notice" role="alert" hidden></p>
+      <nav class="workspace-tabs" aria-label="Workspace views">
+        <button id="tab-browse" class="tab-button" type="button" aria-pressed="true" disabled>Browse</button>
+        <button id="tab-structure" class="tab-button" type="button" aria-pressed="false" disabled>Structure</button>
+        <button id="tab-sql" class="tab-button" type="button" aria-pressed="false" disabled>SQL</button>
+        <button id="tab-objects" class="tab-button" type="button" aria-pressed="false" disabled>Objects</button>
+        <button id="tab-search" class="tab-button" type="button" aria-pressed="false" disabled>Search</button>
+        <button id="tab-status" class="tab-button" type="button" aria-pressed="false" disabled>Status</button>
+        <button id="tab-users" class="tab-button" type="button" aria-pressed="false" disabled>Users</button>
+      </nav>
+      <div id="workspace-content" class="workspace-content">
+        <section id="workspace-empty" class="workspace-empty" aria-live="polite">
+          <p class="empty-title">No database selected</p>
+          <p id="workspace-message">Choose a database from the sidebar.</p>
+        </section>
+        <section id="browse-panel" class="data-panel" aria-labelledby="tab-browse" hidden>
+          <div class="panel-heading">
+            <div><div class="section-eyebrow">TABLE DATA</div><h2>Browse rows</h2></div>
+            <div class="page-size-control"><label for="page-size">Rows per page</label><select id="page-size"><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="200">200</option></select></div>
+          </div>
+          <div class="panel-toolbar" id="browse-toolbar">
+            <button id="insert-row-button" class="button button-secondary" type="button">Insert row</button>
+            <button id="browse-export-button" class="button button-secondary" type="button">Export</button>
+            <button id="browse-import-button" class="button button-secondary" type="button">Import</button>
+            <p id="row-actions-hint" class="hint-text" role="note" hidden></p>
+          </div>
+          <div id="filter-bar" class="filter-bar" aria-label="Filter rows">
+            <div class="filter-head">
+              <span class="filter-title">Filter</span>
+              <span class="filter-actions">
+                <button id="filter-apply" class="button button-secondary" type="button">Apply</button>
+                <button id="filter-clear" class="button button-secondary" type="button">Clear</button>
+              </span>
+            </div>
+            <div class="filter-row">
+              <select id="filter-column-0" class="filter-column" aria-label="Filter 1 column"><option value="">— column —</option></select>
+              <select id="filter-op-0" class="filter-op" aria-label="Filter 1 operator">
+                <option value="=">=</option><option value="!=">≠</option><option value="&lt;">&lt;</option><option value="&lt;=">≤</option>
+                <option value=">">&gt;</option><option value=">=">≥</option><option value="like">like</option><option value="not like">not like</option>
+                <option value="is null">is null</option><option value="is not null">is not null</option>
+              </select>
+              <input id="filter-value-0" class="filter-value" aria-label="Filter 1 value">
+            </div>
+            <div class="filter-row">
+              <select id="filter-column-1" class="filter-column" aria-label="Filter 2 column"><option value="">— column —</option></select>
+              <select id="filter-op-1" class="filter-op" aria-label="Filter 2 operator">
+                <option value="=">=</option><option value="!=">≠</option><option value="&lt;">&lt;</option><option value="&lt;=">≤</option>
+                <option value=">">&gt;</option><option value=">=">≥</option><option value="like">like</option><option value="not like">not like</option>
+                <option value="is null">is null</option><option value="is not null">is not null</option>
+              </select>
+              <input id="filter-value-1" class="filter-value" aria-label="Filter 2 value">
+            </div>
+            <div class="filter-row">
+              <select id="filter-column-2" class="filter-column" aria-label="Filter 3 column"><option value="">— column —</option></select>
+              <select id="filter-op-2" class="filter-op" aria-label="Filter 3 operator">
+                <option value="=">=</option><option value="!=">≠</option><option value="&lt;">&lt;</option><option value="&lt;=">≤</option>
+                <option value=">">&gt;</option><option value=">=">≥</option><option value="like">like</option><option value="not like">not like</option>
+                <option value="is null">is null</option><option value="is not null">is not null</option>
+              </select>
+              <input id="filter-value-2" class="filter-value" aria-label="Filter 3 value">
+            </div>
+          </div>
+          <div class="status-row"><p id="browse-status" class="result-status" role="status"></p><button id="retry-rows" class="button button-secondary retry-rows" type="button" hidden>Retry</button></div>
+          <div id="browse-result" class="grid-scroll" tabindex="0" aria-label="Table rows"></div>
+          <p id="browse-pagination-help" class="result-status">Without a stable ordering, pages may shift as data changes; rows may be skipped or repeated.</p>
+          <div class="pagination" aria-label="Row pagination">
+            <span id="page-label">Page 1</span>
+            <div class="pagination-buttons"><button id="prev-page" class="button button-secondary" type="button" aria-describedby="browse-pagination-help" disabled>Previous</button><button id="next-page" class="button button-secondary" type="button" aria-describedby="browse-pagination-help" disabled>Next</button></div>
+          </div>
+        </section>
+        <section id="structure-panel" class="data-panel" aria-labelledby="tab-structure" hidden>
+          <div class="panel-heading"><div><div class="section-eyebrow">TABLE DEFINITION</div><h2>Structure</h2></div></div>
+          <div class="panel-toolbar" id="structure-toolbar">
+            <button id="add-column-button" class="button button-secondary" type="button">Add column</button>
+            <button id="rename-table-button" class="button button-secondary" type="button">Rename table</button>
+            <button id="drop-table-button" class="button button-secondary" type="button">Drop table</button>
+            <button id="structure-export-button" class="button button-secondary" type="button">Export</button>
+            <button id="structure-import-button" class="button button-secondary" type="button">Import</button>
+          </div>
+          <div id="rename-table-form" class="inline-form" hidden>
+            <div class="inline-form-row">
+              <label class="inline-label" for="rename-table-input">New name</label>
+              <input id="rename-table-input" class="inline-input">
+              <button id="rename-table-confirm" class="button button-primary" type="button">Rename table</button>
+              <button id="rename-table-cancel" class="button button-secondary" type="button">Cancel</button>
+            </div>
+            <p id="rename-table-status" class="hint-text" role="status"></p>
+          </div>
+          <div id="drop-table-form" class="inline-form" hidden>
+            <div class="inline-form-row">
+              <label class="inline-label" for="drop-table-input">Type the table name to confirm</label>
+              <input id="drop-table-input" class="inline-input" aria-describedby="drop-table-help" autocomplete="off" spellcheck="false">
+              <button id="drop-table-confirm" class="button button-primary" type="button" disabled>Drop table</button>
+              <button id="drop-table-cancel" class="button button-secondary" type="button">Cancel</button>
+            </div>
+            <p id="drop-table-help" class="hint-text">This destroys the table and all of its data; it cannot be undone.</p>
+          </div>
+          <p id="structure-status" class="result-status" role="status"></p>
+          <div id="structure-result" class="grid-scroll" tabindex="0" aria-label="Table structure"></div>
+          <div id="column-form" class="inline-form" hidden>
+            <h3 id="column-form-title" class="inline-form-title">Add column</h3>
+            <div class="column-form-grid">
+              <div class="field"><label for="column-form-name">Name</label><input id="column-form-name" autocomplete="off" spellcheck="false"></div>
+              <div class="field"><label for="column-form-type">Type</label><select id="column-form-type"></select></div>
+              <div class="field field-narrow"><label for="column-form-length">Length</label><input id="column-form-length" inputmode="numeric" autocomplete="off"></div>
+              <div class="field field-narrow"><label for="column-form-decimals">Decimals</label><input id="column-form-decimals" inputmode="numeric" autocomplete="off"></div>
+              <div class="field"><label for="column-form-default">Default</label><input id="column-form-default" autocomplete="off"></div>
+              <div class="field" id="column-form-position-field"><label for="column-form-position">Position</label><select id="column-form-position"><option value="">At the end</option><option value="first">First</option><option value="after">After column…</option></select></div>
+              <div class="field" id="column-form-after-field" hidden><label for="column-form-after">After column</label><select id="column-form-after"></select></div>
+            </div>
+            <div class="check-row">
+              <label class="check-label"><input type="checkbox" id="column-form-nullable"> Nullable</label>
+              <label class="check-label"><input type="checkbox" id="column-form-auto"> Auto-increment</label>
+              <label class="check-label"><input type="checkbox" id="column-form-primary"> Primary key</label>
+              <label class="check-label"><input type="checkbox" id="column-form-unique"> Unique</label>
+              <label class="check-label"><input type="checkbox" id="column-form-default-null"> Default NULL</label>
+            </div>
+            <p class="hint-text">Binary column types (blob, varbinary, …) take hexadecimal values elsewhere in DBKid. A default may be a number, CURRENT_TIMESTAMP, or plain text without quotes or backslashes.</p>
+            <div class="inline-form-row">
+              <button id="column-form-submit" class="button button-primary" type="button">Add column</button>
+              <button id="column-form-cancel" class="button button-secondary" type="button">Cancel</button>
+            </div>
+            <p id="column-form-status" class="hint-text" role="status"></p>
+          </div>
+          <div class="section-block">
+            <div class="section-heading"><h3>Indexes</h3><button id="add-index-button" class="button button-secondary" type="button">Add index</button></div>
+            <div id="index-form" class="inline-form" hidden>
+              <div class="inline-form-row">
+                <label class="inline-label" for="index-form-name">Index name</label>
+                <input id="index-form-name" class="inline-input" autocomplete="off" spellcheck="false">
+              </div>
+              <div id="index-form-columns" class="check-row"></div>
+              <div class="check-row">
+                <label class="check-label"><input type="checkbox" id="index-form-unique"> Unique index</label>
+              </div>
+              <div class="inline-form-row">
+                <button id="index-form-submit" class="button button-primary" type="button">Create index</button>
+                <button id="index-form-cancel" class="button button-secondary" type="button">Cancel</button>
+              </div>
+              <p id="index-form-status" class="hint-text" role="status"></p>
+            </div>
+            <div id="indexes-result"></div>
+            <p id="indexes-status" class="hint-text" role="status"></p>
+          </div>
+          <div class="section-block">
+            <div class="section-heading"><h3>Foreign keys</h3><button id="fk-add-button" class="button button-secondary" type="button">Add foreign key</button></div>
+            <form id="fk-form" class="inline-form" hidden>
+              <p id="fk-form-scope" class="hint-text"></p>
+              <div class="inline-form-row">
+                <label for="fk-name">Constraint name (optional)</label>
+                <input id="fk-name" type="text" maxlength="64" placeholder="auto-generated when empty">
+              </div>
+              <div class="inline-form-row" id="fk-pairs">
+                <label>Columns</label>
+                <select id="fk-column-0" aria-label="Local column 1"></select>
+                <span class="fk-arrow">→</span>
+                <select id="fk-ref-db-0" aria-label="Referenced database"></select>
+                <select id="fk-ref-table-0" aria-label="Referenced table"></select>
+                <select id="fk-ref-column-0" aria-label="Referenced column 1"></select>
+              </div>
+              <div class="inline-form-row">
+                <label for="fk-on-delete">ON DELETE</label>
+                <select id="fk-on-delete">
+                  <option value="">default (RESTRICT)</option>
+                  <option>NO ACTION</option><option>RESTRICT</option><option>CASCADE</option>
+                  <option>SET NULL</option><option>SET DEFAULT</option>
+                </select>
+                <label for="fk-on-update">ON UPDATE</label>
+                <select id="fk-on-update">
+                  <option value="">default (RESTRICT)</option>
+                  <option>NO ACTION</option><option>RESTRICT</option><option>CASCADE</option>
+                  <option>SET NULL</option><option>SET DEFAULT</option>
+                </select>
+              </div>
+              <div class="inline-form-row">
+                <button id="fk-form-submit" class="button button-primary" type="button">Add foreign key</button>
+                <button id="fk-form-cancel" class="button button-secondary" type="button">Cancel</button>
+              </div>
+              <p id="fk-form-status" class="hint-text" role="status"></p>
+            </form>
+            <div id="foreign-keys-result"></div>
+            <p id="foreign-keys-status" class="hint-text" role="status"></p>
+          </div>
+        </section>
+        <section id="sql-panel" class="data-panel" aria-labelledby="tab-sql" hidden>
+          <div class="panel-heading"><div><div class="section-eyebrow">QUERY EDITOR</div><h2>Run SQL</h2></div><div class="sql-database-label">Database: <strong id="sql-database"></strong></div></div>
+          <div class="sql-columns">
+            <div class="sql-main">
+              <form id="sql-form" class="sql-form">
+                <label for="sql-editor">SQL statement</label>
+                <div class="sql-editor-wrap">
+                  <pre id="sql-highlight" class="sql-highlight" aria-hidden="true"></pre>
+                  <textarea id="sql-editor" spellcheck="false" rows="8" aria-describedby="sql-help" placeholder="Enter a SQL statement"></textarea>
+                </div>
+                <p id="sql-help" class="field-help">Each statement runs on a fresh database connection; transaction and session state will not persist between separate requests. SQL can modify or delete data and affect other databases or files, subject to MySQL permissions. You will be asked to confirm before it runs.</p>
+                <div class="sql-actions"><button id="run-query" class="button button-primary" type="submit">Run SQL</button><button id="explain-query" class="button button-secondary" type="button">Explain</button><span class="shortcut-hint">Ctrl / ⌘ + Enter</span></div>
+              </form>
+              <p id="query-status" class="result-status" role="status">No query run yet.</p>
+              <div id="query-result" class="grid-scroll" tabindex="0" aria-label="SQL query results" hidden></div>
+            </div>
+            <aside id="history-panel" class="history-panel" aria-labelledby="history-heading">
+              <div class="section-heading"><h3 id="history-heading">History</h3><button id="clear-history" class="button button-secondary" type="button">Clear</button></div>
+              <p id="history-status" class="hint-text" role="status"></p>
+              <ol id="history-list" aria-live="polite"></ol>
+            </aside>
+          </div>
+        </section>
+        <section id="objects-panel" class="data-panel" aria-labelledby="tab-objects" hidden>
+          <div class="panel-heading"><div><div class="section-eyebrow">DATABASE OBJECTS</div><h2>Objects</h2></div><div class="sql-database-label">Database: <strong id="objects-database"></strong></div></div>
+          <div class="objects-toolbar"><label for="objects-filter">Filter objects</label><input id="objects-filter" type="search" placeholder="Filter by name or kind"><div class="objects-create"><button id="object-create-procedure" class="button button-secondary" type="button">Create procedure</button><button id="object-create-trigger" class="button button-secondary" type="button">Create trigger</button><button id="object-create-event" class="button button-secondary" type="button">Create event</button></div></div>
+          <p id="objects-status" class="result-status" role="status"></p>
+          <div id="objects-result"></div>
+        </section>
+        <section id="search-panel" class="data-panel" aria-labelledby="tab-search" hidden>
+          <div class="panel-heading"><div><div class="section-eyebrow">FULL DATABASE SEARCH</div><h2>Search</h2></div><div class="sql-database-label">Database: <strong id="search-database"></strong></div></div>
+          <form id="search-form" class="search-form">
+            <label class="visually-hidden" for="search-input">Search text</label>
+            <input id="search-input" class="search-input" placeholder="Search all text columns in this database">
+            <select id="search-mode" class="search-mode" aria-label="Search mode">
+              <option value="like">contains</option>
+              <option value="exact">exact</option>
+            </select>
+            <button id="search-submit" class="button button-primary" type="submit">Search</button>
+          </form>
+          <p id="search-status" class="result-status" role="status"></p>
+          <div id="search-result"></div>
+        </section>
+        <section id="status-panel" class="data-panel" aria-labelledby="tab-status" hidden>
+          <div class="panel-heading"><div><div class="section-eyebrow">SERVER STATE</div><h2>Status</h2></div><button id="refresh-status" class="button button-secondary" type="button">Refresh</button></div>
+          <p id="status-status" class="result-status" role="status"></p>
+          <div class="section-block">
+            <h3>Processes</h3>
+            <div id="processes-result" class="grid-scroll" tabindex="0" aria-label="Server processes"></div>
+          </div>
+          <div class="section-block">
+            <h3>Variables</h3>
+            <div id="variables-result" class="grid-scroll" tabindex="0" aria-label="Server variables"></div>
+          </div>
+          <div class="section-block">
+            <h3>Status counters</h3>
+            <div id="server-status-result" class="grid-scroll" tabindex="0" aria-label="Server status counters"></div>
+          </div>
+        </section>
+        <section id="users-panel" class="data-panel" aria-labelledby="tab-users" hidden>
+          <div class="panel-heading"><div><div class="section-eyebrow">DATABASE ACCOUNTS</div><h2>Users</h2></div><button id="users-refresh" class="button button-secondary" type="button">Refresh</button></div>
+          <p id="users-status" class="result-status" role="status"></p>
+          <p id="users-restricted" class="hint-text" hidden>The connected account cannot list database users. Only its own grants are shown.</p>
+          <div id="my-grants" class="section-block" hidden>
+            <h3>Grants of the connected account</h3>
+            <div id="my-grants-result" class="grid-scroll" tabindex="0" aria-label="Grants of the connected account"></div>
+          </div>
+          <div class="section-block">
+            <div class="section-heading"><h3>Accounts</h3><button id="user-create-button" class="button button-secondary" type="button">Create user</button></div>
+            <div id="users-result" class="grid-scroll" tabindex="0" aria-label="Database accounts"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="row-editor-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="row-editor-title">
+      <header class="modal-header"><h3 id="row-editor-title">Edit row</h3><button id="row-editor-close" type="button" class="button button-secondary">Close</button></header>
+      <div class="modal-body">
+        <p id="row-editor-scope" class="modal-intro"></p>
+        <div id="row-editor-form" class="row-editor-grid"></div>
+        <p id="row-editor-status" class="result-status" role="status"></p>
+      </div>
+      <footer class="modal-actions">
+        <button id="row-editor-save" type="button" class="button button-primary">Save row</button>
+        <button id="row-editor-cancel" type="button" class="button button-secondary">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="export-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="export-title">
+      <header class="modal-header"><h3 id="export-title">Export</h3><button id="export-close" type="button" class="button button-secondary">Close</button></header>
+      <div class="modal-body">
+        <p id="export-scope" class="modal-intro"></p>
+        <div class="field"><label for="export-format">Format</label><select id="export-format"><option value="csv">CSV (data only)</option><option value="sql">SQL</option></select></div>
+        <div class="field"><label for="export-what">SQL contents</label><select id="export-what"><option value="data">Data only</option><option value="structure">Structure only</option><option value="both">Structure and data</option></select></div>
+        <p class="field-help">Exports stop at 50,000 rows or 32 MiB; a truncated file ends with a truncation marker line.</p>
+        <p id="export-status" class="result-status" role="status"></p>
+      </div>
+      <footer class="modal-actions">
+        <button id="export-submit" type="button" class="button button-primary">Export</button>
+        <button id="export-cancel" type="button" class="button button-secondary">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="import-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
+      <header class="modal-header"><h3 id="import-title">Import file</h3><button id="import-close" type="button" class="button button-secondary">Close</button></header>
+      <div class="modal-body">
+        <p id="import-scope" class="modal-intro"></p>
+        <div class="field"><label for="import-file">File (.sql, .csv or .txt)</label><input id="import-file" type="file" accept=".sql,.csv,.txt"></div>
+        <div class="field"><label for="import-format">Format</label><select id="import-format"><option value="sql">SQL script</option><option value="csv">CSV into a table</option></select></div>
+        <div id="import-sql-options" hidden>
+          <label class="check-label"><input type="checkbox" id="import-stop-on-error" checked> Stop at the first error</label>
+          <p class="hint-text">Statements run one by one; earlier statements are not rolled back when a later one fails.</p>
+        </div>
+        <div id="import-csv-options" hidden>
+          <div class="column-form-grid">
+            <div class="field field-narrow"><label for="import-delimiter">Delimiter</label><select id="import-delimiter"><option value=",">Comma (,)</option><option value=";">Semicolon (;)</option><option value="&#9;">Tab</option><option value="|">Pipe (|)</option></select></div>
+            <div class="field field-narrow"><label for="import-quote">Quote</label><select id="import-quote"><option value="&#34;">Double quote (&quot;)</option><option value="'">Single quote (')</option></select></div>
+          </div>
+          <label class="check-label"><input type="checkbox" id="import-header" checked> First row is a header row</label>
+          <div class="field"><span class="inline-label">CSV field to column mapping</span><div id="import-mapping" class="import-mapping"></div></div>
+        </div>
+        <div id="import-preview" class="import-preview"></div>
+        <p id="import-status" class="result-status" role="status"></p>
+      </div>
+      <footer class="modal-actions">
+        <button id="import-submit" type="button" class="button button-primary">Import</button>
+        <button id="import-cancel" type="button" class="button button-secondary">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="object-editor-modal" class="modal-overlay" hidden>
+    <div class="modal object-editor" role="dialog" aria-modal="true" aria-labelledby="object-editor-title">
+      <header class="modal-header"><h3 id="object-editor-title">Object editor</h3><button id="object-editor-close" type="button" class="button button-secondary">Close</button></header>
+      <div class="modal-body">
+        <p id="object-editor-scope" class="modal-intro"></p>
+        <div class="object-warning"><strong>Unsandboxed SQL.</strong> This SQL executes with the connected database account's privileges and can affect other objects, databases or files.</div>
+        <div id="object-replace-warning" class="object-warning"><strong>DROP + CREATE is non-atomic.</strong> External DDL can race. Grants can be lost, trigger order and event schedules can change. No automatic restore or retry is performed. Save the original before proceeding.</div>
+        <div id="object-name-field" class="field"><label for="object-name">Intended object name</label><input id="object-name" autocomplete="off"><p class="field-help">The name updates the untouched template. After editing SQL, keep its CREATE target and intended name in sync. SQL bodies remain unsandboxed.</p></div>
+        <div id="object-original-field" class="field"><label for="object-original">Original definition (copy before replacing)</label><textarea id="object-original" rows="7" readonly spellcheck="false"></textarea><button id="object-original-download" type="button" class="button button-secondary">Download original SQL</button></div>
+        <div class="field"><label for="object-sql">Proposed SQL (full definition)</label><textarea id="object-sql" rows="10" spellcheck="false"></textarea></div>
+        <p id="object-editor-status" class="result-status" role="status"></p>
+      </div>
+      <footer class="modal-actions"><button id="object-editor-submit" type="button" class="button button-primary">Execute</button><button id="object-editor-cancel" type="button" class="button button-secondary">Cancel</button></footer>
+    </div>
+  </div>
+
+  <div id="definition-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="definition-title">
+      <header class="modal-header"><h3 id="definition-title">Definition</h3><button id="definition-close" type="button" class="button button-secondary">Close</button></header>
+      <div class="modal-body">
+        <p id="definition-scope" class="modal-intro"></p>
+        <p id="definition-note" class="hint-text" role="status"></p>
+        <pre id="definition-code" class="code-block"></pre>
+      </div>
+      <footer class="modal-actions">
+        <button id="definition-cancel" type="button" class="button button-secondary">Close</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="table-create-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="table-create-title">
+      <header class="modal-header"><h3 id="table-create-title">Create table</h3><button id="table-create-close" type="button" class="button button-secondary">Close</button></header>
+      <div class="modal-body">
+        <p class="modal-intro">Define a table and its columns on the connected database server.</p>
+        <div class="table-create-details">
+          <div class="field"><label for="table-create-database">Database</label><select id="table-create-database"></select></div>
+          <div class="field"><label for="table-create-name">Table name</label><input id="table-create-name" type="text" maxlength="64" autocomplete="off" spellcheck="false"></div>
+          <div class="field"><label for="table-create-engine">Storage engine <span class="label-hint">(optional)</span></label>
+            <select id="table-create-engine">
+              <option value="">Server default</option>
+              <option value="innodb">InnoDB</option>
+              <option value="myisam">MyISAM</option>
+              <option value="memory">MEMORY</option>
+              <option value="csv">CSV</option>
+              <option value="archive">ARCHIVE</option>
+              <option value="aria">ARIA</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-create-section-heading">
+          <div><h4>Columns</h4><p class="hint-text">Add at least one column. Use length and decimals when required by the type.</p></div>
+          <button id="table-create-add-column" type="button" class="button button-secondary">+ Add column</button>
+        </div>
+        <div class="table-create-rows" id="table-create-rows"></div>
+        <p id="table-create-status" class="result-status" role="status"></p>
+      </div>
+      <footer class="modal-actions">
+        <button id="table-create-submit" type="button" class="button button-primary">Create table</button>
+        <button id="table-create-cancel" type="button" class="button button-secondary">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="user-create-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="user-create-title">
+      <header class="modal-header"><h3 id="user-create-title">Create user</h3><button id="user-create-close" type="button" class="button button-secondary">Close</button></header>
+      <div class="modal-body">
+        <p class="modal-intro">The account is created on the database server with the permissions the connected account has to create it.</p>
+        <div class="field"><label for="user-create-name">User name</label><input id="user-create-name" type="text" maxlength="160" autocomplete="off"></div>
+        <div class="field"><label for="user-create-host">Host (exact, or a pattern like %)</label><input id="user-create-host" type="text" maxlength="160" value="127.0.0.1" autocomplete="off"></div>
+        <div class="field"><label for="user-create-password">Password (optional)</label><input id="user-create-password" type="password" maxlength="128" autocomplete="new-password"></div>
+        <p class="hint-text">The password is sent once to the database server and is never stored, logged or echoed.</p>
+        <p id="user-create-status" class="result-status" role="status"></p>
+      </div>
+      <footer class="modal-actions">
+        <button id="user-create-submit" type="button" class="button button-primary">Create user</button>
+        <button id="user-create-cancel" type="button" class="button button-secondary">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="user-password-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="user-password-title">
+      <header class="modal-header"><h3 id="user-password-title">Set password</h3><button id="user-password-close" type="button" class="button button-secondary">Close</button></header>
+      <div class="modal-body">
+        <p id="user-password-scope" class="modal-intro"></p>
+        <div class="field"><label for="user-password-value">New password</label><input id="user-password-value" type="password" maxlength="128" autocomplete="new-password"></div>
+        <p class="hint-text">The password is sent once to the database server and is never stored, logged or echoed.</p>
+        <p id="user-password-status" class="result-status" role="status"></p>
+      </div>
+      <footer class="modal-actions">
+        <button id="user-password-submit" type="button" class="button button-primary">Set password</button>
+        <button id="user-password-cancel" type="button" class="button button-secondary">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="user-grants-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="user-grants-title">
+      <header class="modal-header"><h3 id="user-grants-title">Grants</h3><button id="user-grants-close" type="button" class="button button-secondary">Close</button></header>
+      <div class="modal-body">
+        <p id="user-grants-scope" class="modal-intro"></p>
+        <div id="user-grants-result" class="grant-lines"></div>
+        <p id="user-grants-status" class="result-status" role="status"></p>
+      </div>
+      <footer class="modal-actions">
+        <button id="user-grants-cancel" type="button" class="button button-secondary">Close</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="privilege-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="privilege-title">
+      <header class="modal-header"><h3 id="privilege-title">Grant privileges</h3><button id="privilege-close" type="button" class="button button-secondary">Close</button></header>
+      <div class="modal-body">
+        <p id="privilege-scope" class="modal-intro"></p>
+        <div class="field"><label for="privilege-scope-select">Scope</label>
+          <select id="privilege-scope-select">
+            <option value="global">Global (*.*)</option>
+            <option value="database">Database</option>
+            <option value="table">Database and table</option>
+          </select>
+        </div>
+        <div class="field" id="privilege-database-field" hidden><label for="privilege-database">Database</label><input id="privilege-database" type="text" maxlength="160" autocomplete="off"></div>
+        <div class="field" id="privilege-table-field" hidden><label for="privilege-table">Table</label><input id="privilege-table" type="text" maxlength="160" autocomplete="off"></div>
+        <fieldset class="privilege-grid"><legend>Privileges</legend><div id="privilege-checkboxes"></div></fieldset>
+        <label class="check-label"><input type="checkbox" id="privilege-grant-option"> WITH GRANT OPTION</label>
+        <p id="privilege-status" class="result-status" role="status"></p>
+      </div>
+      <footer class="modal-actions">
+        <button id="privilege-submit" type="button" class="button button-primary">Apply</button>
+        <button id="privilege-cancel" type="button" class="button button-secondary">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="user-drop-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="user-drop-title">
+      <header class="modal-header"><h3 id="user-drop-title">Drop user</h3><button id="user-drop-close" type="button" class="button button-secondary">Close</button></header>
+      <div class="modal-body">
+        <p id="user-drop-scope" class="modal-intro"></p>
+        <p class="hint-text">The account is removed from the server and can no longer connect. This cannot be undone.</p>
+        <div class="field"><label for="user-drop-confirm">Type user@host to confirm</label><input id="user-drop-confirm" type="text" maxlength="200" autocomplete="off"></div>
+        <p id="user-drop-status" class="result-status" role="status"></p>
+      </div>
+      <footer class="modal-actions">
+        <button id="user-drop-submit" type="button" class="button button-primary" disabled>Drop user</button>
+        <button id="user-drop-cancel" type="button" class="button button-secondary">Cancel</button>
+      </footer>
+    </div>
+  </div>
+</body>
+</html>
