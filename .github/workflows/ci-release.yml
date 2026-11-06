@@ -42,9 +42,37 @@ jobs:
           CHROME_BIN: /usr/bin/google-chrome
           DBKID_TEST_TMPDIR: ${{ runner.temp }}
         run: |
-          "$CHROME_BIN" --version
-          node --check web/app.js
-          node --test web/app.test.js
+          set -o pipefail
+          if "$CHROME_BIN" --version; then
+            :
+          else
+            status=$?
+            echo '::error title=Chrome check failed::Chrome could not report its version.'
+            exit "$status"
+          fi
+          if node --check web/app.js; then
+            :
+          else
+            status=$?
+            echo '::error title=JavaScript syntax check failed::node --check web/app.js failed.'
+            exit "$status"
+          fi
+          # These tests use disposable synthetic fixtures, not a real database.
+          log="$RUNNER_TEMP/dbkid-frontend-test.log"
+          if node --test --test-reporter=spec web/app.test.js 2>&1 | tee "$log"; then
+            :
+          else
+            status=$?
+            # The spec reporter ends with failure details; bound public annotations.
+            details=$(tail -c 12000 "$log" || true)
+            details=${details//"$GITHUB_WORKSPACE"/<workspace>}
+            details=${details//"$RUNNER_TEMP"/<runner-temp>}
+            details=${details//'%'/'%25'}
+            details=${details//$'\r'/'%0D'}
+            details=${details//$'\n'/'%0A'}
+            printf '::error title=Frontend test failure::%s\n' "$details"
+            exit "$status"
+          fi
 
   package:
     name: Build release archives
